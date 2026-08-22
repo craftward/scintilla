@@ -53,7 +53,7 @@ private:
 	/// Drawing is only performed for @a maxLineLength characters on each line.
 	Sci::Line lineNumber;
 public:
-	enum { wrapWidthInfinite = 0x7ffffff };
+	static constexpr int wrapWidthInfinite = 0x7ffffff;
 
 	int maxLineLength = -1;
 	int numCharsInLine = 0;
@@ -221,6 +221,10 @@ struct TextSegment {
 	}
 };
 
+// If a whole run is longer than lengthStartSubdivision then subdivide
+// into smaller runs at spaces or punctuation.
+constexpr int lengthStartSubdivision = 300;
+
 // Class to break a line of text into shorter runs at sensible places.
 class BreakFinder {
 	const LineLayout *ll;
@@ -235,11 +239,8 @@ class BreakFinder {
 	const SpecialRepresentations *preprs;
 	void Insert(Sci::Position val);
 public:
-	// If a whole run is longer than lengthStartSubdivision then subdivide
-	// into smaller runs at spaces or punctuation.
-	enum { lengthStartSubdivision = 300 };
 	// Try to make each subdivided run lengthEachSubdivision or shorter.
-	enum { lengthEachSubdivision = 100 };
+	static constexpr int lengthEachSubdivision = 100;
 	enum class BreakFor {
 		Text = 0,
 		Selection = 1,
