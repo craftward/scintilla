@@ -52,6 +52,7 @@ private:
 	int lenLineStarts = 0;
 	/// Drawing is only performed for @a maxLineLength characters on each line.
 	Sci::Line lineNumber;
+	std::unique_ptr<XYPOSITION[]> positions;
 public:
 	static constexpr int wrapWidthInfinite = 0x7ffffff;
 
@@ -67,7 +68,6 @@ public:
 	int edgeColumn = 0;
 	std::unique_ptr<char[]> chars;
 	std::unique_ptr<unsigned char[]> styles;
-	std::unique_ptr<XYPOSITION[]> positions;
 
 	std::unique_ptr<BidiData> bidiData;
 
@@ -101,6 +101,10 @@ public:
 	XYPOSITION XInLine(Sci::Position index) const noexcept;
 	Interval Span(int start, int end) const noexcept;
 	Interval SpanByte(int index) const noexcept;
+	void SetPosition(int index, XYPOSITION position) noexcept;
+	[[nodiscard]] XYPOSITION *PositionsFor(int index) const noexcept;
+	[[nodiscard]] XYPOSITION GetPosition(Sci::Position index) const noexcept;
+	[[nodiscard]] XYPOSITION GetWidth(Sci::Position end, Sci::Position start) const noexcept;
 	int EndLineStyle() const noexcept;
 	[[nodiscard]] int LastStyle() const noexcept;
 	void WrapLine(const Document *pdoc, Sci::Position posLineStart, Wrap wrapState, XYPOSITION wrapWidth);
