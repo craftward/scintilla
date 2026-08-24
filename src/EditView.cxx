@@ -342,6 +342,9 @@ void LayoutSegments(IPositionCache *pCache,
 	std::atomic<uint32_t> &nextIndex,
 	const bool textUnicode,
 	const bool multiThreaded) {
+
+	std::array<XYPOSITION, lengthStartSubdivision> positionsMeasured {};
+
 	while (true) {
 		const uint32_t i = nextIndex.fetch_add(1, std::memory_order_acq_rel);
 		if (i >= segments.size()) {
@@ -349,43 +352,47 @@ void LayoutSegments(IPositionCache *pCache,
 		}
 		const TextSegment &ts = segments[i];
 		const unsigned int styleSegment = ll->styles[ts.start];
-		XYPOSITION *positions = ll->PositionsFor(ts.start+1);
+		XWidth *positions = ll->PositionsFor(ts.start);
 		if (vstyle.styles[styleSegment].visible) {
 			if (ts.representation) {
-				XYPOSITION representationWidth = 0.0;
+				XWidth representationWidth = 0.0;
 				// Tab is a special case of representation, taking a variable amount of space
 				// which will be filled in later.
 				if (ll->chars[ts.start] != '\t' || vstyle.tabDrawMode == TabDrawMode::ControlChar) {
-					representationWidth = vstyle.controlCharWidth;
+					representationWidth = static_cast<XWidth>(vstyle.controlCharWidth);
 					if (representationWidth <= 0.0) {
-						assert(ts.representation->stringRep.length() <= Representation::maxLength);
-						std::array<XYPOSITION, Representation::maxLength + 1> positionsRepr;
 						// ts.representation->stringRep is UTF-8.
 						pCache->MeasureWidths(surface, vstyle, StyleControlChar, true, ts.representation->stringRep,
-							positionsRepr.data(), multiThreaded);
-						representationWidth = positionsRepr[ts.representation->stringRep.length() - 1];
+							positionsMeasured.data(), multiThreaded);
+						representationWidth = static_cast<XWidth>(positionsMeasured[ts.representation->stringRep.length() - 1]);
 						if (FlagSet(ts.representation->appearance, RepresentationAppearance::Blob)) {
-							representationWidth += vstyle.ctrlCharPadding;
+							representationWidth += static_cast<XWidth>(vstyle.ctrlCharPadding);
 						}
 					}
 				}
-				std::fill(positions, positions + ts.length, representationWidth);
+				positions[0] = representationWidth;
+				std::fill(positions + 1, positions + ts.length, 0.0f);
 			} else {
 				if ((ts.length == 1) && (' ' == ll->chars[ts.start])) {
 					// Over half the segments are single characters and of these about half are space characters.
-					positions[0] = vstyle.styles[styleSegment].spaceWidth;
+					positions[0] = static_cast<XWidth>(vstyle.styles[styleSegment].spaceWidth);
 				} else {
+					assert(ts.length <= lengthStartSubdivision);
 					pCache->MeasureWidths(surface, vstyle, styleSegment, textUnicode,
-						std::string_view(&ll->chars[ts.start], ts.length), positions, multiThreaded);
+						std::string_view(&ll->chars[ts.start], ts.length), positionsMeasured.data(), multiThreaded);
+					positions[0] = static_cast<XWidth>(positionsMeasured[0]);
+					for (int ib = 1; ib < ts.length; ib++) {
+						positions[ib] = static_cast<XWidth>(positionsMeasured[ib] - positionsMeasured[ib-1]);
+					}
 				}
 			}
 		} else if (vstyle.styles[styleSegment].invisibleRepresentation[0]) {
 			const std::string_view text = vstyle.styles[styleSegment].invisibleRepresentation;
-			std::array<XYPOSITION, Representation::maxLength + 1> positionsRepr;
 			// invisibleRepresentation is UTF-8.
-			pCache->MeasureWidths(surface, vstyle, styleSegment, true, text, positionsRepr.data(), multiThreaded);
-			const XYPOSITION representationWidth = positionsRepr[text.length() - 1];
-			std::fill(positions, positions + ts.length, representationWidth);
+			pCache->MeasureWidths(surface, vstyle, styleSegment, true, text, positionsMeasured.data(), multiThreaded);
+			const XWidth representationWidth = static_cast<XWidth>(positionsMeasured[text.length() - 1]);
+			positions[0] = representationWidth;
+			std::fill(positions + 1, positions + ts.length, 0.0f);
 		}
 	}
 }
@@ -475,16 +482,13 @@ void EditView::LayoutLine(const EditModel &model, Surface *surface, const ViewSt
 
 		// Layout the line, determining the position of each character,
 		// with an extra element at the end for the end of the line.
-		ll->SetPosition(0, 0);
-		bool lastSegItalics = false;
+		ll->ClearPositions();
 
 		std::vector<TextSegment> segments;
 		BreakFinder bfLayout(ll, nullptr, Range(0, numCharsInLine), posLineStart, 0, BreakFinder::BreakFor::Text, model.pdoc, model.reprs.get(), nullptr);
 		while (bfLayout.More()) {
 			segments.push_back(bfLayout.Next());
 		}
-
-		ll->ClearPositions();
 
 		if (!segments.empty()) {
 
@@ -506,38 +510,12 @@ void EditView::LayoutLine(const EditModel &model, Surface *surface, const ViewSt
 				});
 		}
 
-		// Accumulate absolute positions from relative positions within segments and expand tabs
-		XYPOSITION xPosition = 0.0;
-		int iByte = 0;
-		ll->SetPosition(iByte++, xPosition);
-		for (const TextSegment &ts : segments) {
-			if (vstyle.styles[ll->styles[ts.start]].visible &&
-				ts.representation &&
-				ll->chars[ts.start] == '\t' && vstyle.tabDrawMode != TabDrawMode::ControlChar) {
-				// Simple visible tab, go to next tab stop
-				const XYPOSITION startTab = ll->GetPosition(ts.start);
-				const XYPOSITION nextTab = NextTabstopPos(line, startTab, vstyle.tabWidth);
-				xPosition += nextTab - startTab;
-			}
-			const XYPOSITION xBeginSegment = xPosition;
-			for (int i = 0; i < ts.length; i++) {
-				xPosition = ll->GetPosition(iByte) + xBeginSegment;
-				ll->SetPosition(iByte++, xPosition);
-			}
-		}
-
-		if (!segments.empty()) {
-			// Not quite the same as before which would effectively ignore trailing invisible segments
-			const TextSegment &ts = segments.back();
-			lastSegItalics = (!ts.representation) && ((ll->chars[ts.end() - 1] != ' ') && vstyle.styles[ll->styles[ts.start]].italic);
-		}
-
-		// Small hack to make lines that end with italics not cut off the edge of the last character
-		if (lastSegItalics) {
-			ll->SetPosition(numCharsInLine, ll->GetPosition(numCharsInLine) + vstyle.lastSegItalicsOffset);
-		}
 		ll->numCharsInLine = numCharsInLine;
 		ll->numCharsBeforeEOL = numCharsBeforeEOL;
+
+		// Accumulate absolute positions from relative positions within segments and expand tabs
+		ll->CalculatePositions(line, *this, vstyle);
+
 		ll->validity = LineLayout::ValidLevel::positions;
 	}
 	if ((ll->validity == LineLayout::ValidLevel::positions) || (ll->widthLine != width)) {

@@ -64,6 +64,50 @@ void BidiData::Resize(size_t maxLineLength_) {
 	widthReprs.resize(maxLineLength_ + 1);
 }
 
+void XPositions::SetSize(size_t size) {
+	positions = std::make_unique<XWidth[]>(size);
+}
+
+void XPositions::Clear(size_t size) {
+	std::fill(&positions[0], &positions[size], 0.0f);
+}
+
+void XPositions::SetWidthMean(XYPOSITION characterWidthMean_) noexcept {
+	characterWidthMean = characterWidthMean_;
+}
+
+XWidth XPositions::GetValue(Sci::Position index) const noexcept {
+	return positions[index];
+}
+
+void XPositions::SetPosition(int index, XYPOSITION position) noexcept {
+	positions[index] = static_cast<XWidth>(position - (characterWidthMean * index));
+}
+
+void XPositions::SetValue(int index, XWidth width) const noexcept {
+	positions[index] = width;
+}
+
+XWidth *XPositions::PositionsFor(int index) const noexcept {
+	return &positions[index];
+}
+
+XYPOSITION XPositions::GetPosition(Sci::Position index) const noexcept {
+	return positions[index] + (characterWidthMean * static_cast<XYPOSITION>(index));
+}
+
+XYPOSITION XPositions::GetWidth(Sci::Position end, Sci::Position start) const noexcept {
+	return GetPosition(end) - GetPosition(start);
+}
+
+Interval XPositions::Span(int start, int end) const noexcept {
+	return { GetPosition(start), GetPosition(end) };
+}
+
+Interval XPositions::SpanByte(int index) const noexcept {
+	return Span(index, index + 1);
+}
+
 LineLayout::LineLayout(Sci::Line lineNumber_, int maxLineLength_) :
 	lineNumber(lineNumber_) {
 	Resize(maxLineLength_);
@@ -76,7 +120,7 @@ void LineLayout::Resize(int maxLineLength_) {
 		styles = std::make_unique<unsigned char []>(lineAllocation);
 		// Extra position allocated as sometimes the Windows
 		// GetTextExtentExPoint API writes an extra element.
-		positions = std::make_unique<XYPOSITION []>(lineAllocation + 1);
+		SetSize(lineAllocation + 1);
 		lineStarts.reset();
 		bidiData.reset();
 		lenLineStarts = 0;
@@ -99,7 +143,7 @@ void LineLayout::EnsureBidiData() {
 }
 
 void LineLayout::ClearPositions() {
-	std::fill(&positions[0], &positions[maxLineLength + 2], 0.0f);
+	Clear(maxLineLength + 2);
 }
 
 void LineLayout::Invalidate(ValidLevel validity_) noexcept {
@@ -289,30 +333,6 @@ XYPOSITION LineLayout::XInLine(Sci::Position index) const noexcept {
 	return GetPosition(numCharsInLine) + 1.0;
 }
 
-Interval LineLayout::Span(int start, int end) const noexcept {
-	return { GetPosition(start), GetPosition(end) };
-}
-
-Interval LineLayout::SpanByte(int index) const noexcept {
-	return Span(index, index+1);
-}
-
-void LineLayout::SetPosition(int index, XYPOSITION position) noexcept {
-	positions[index] = position;
-}
-
-XYPOSITION *LineLayout::PositionsFor(int index) const noexcept {
-	return &positions[index];
-}
-
-XYPOSITION LineLayout::GetPosition(Sci::Position index) const noexcept {
-	return positions[index];
-}
-
-XYPOSITION LineLayout::GetWidth(Sci::Position end, Sci::Position start) const noexcept {
-	return GetPosition(end) - GetPosition(start);
-}
-
 int LineLayout::EndLineStyle() const noexcept {
 	return styles[std::max(numCharsBeforeEOL - 1, 0)];
 }
@@ -384,6 +404,39 @@ void LineLayout::WrapLine(const Document *pdoc, Sci::Position posLineStart, Wrap
 		}
 	}
 	lines++;
+}
+
+void LineLayout::CalculatePositions(Sci::Line line, const TabStopProvider &tsp, const ViewStyle &vstyle) noexcept {
+	XYPOSITION widthAccurate = 0.0;
+	// Calculate accurate width of whole line
+	for (int i = 0; i < numCharsInLine; i++) {
+		const XWidth widthChar = GetValue(i);
+		widthAccurate += widthChar;
+		if (chars[i] == '\t' && vstyle.tabDrawMode != TabDrawMode::ControlChar) {
+			widthAccurate = tsp.NextTabstopPos(line, widthAccurate, vstyle.tabWidth);
+		}
+	}
+	SetWidthMean(widthAccurate / (numCharsInLine ? numCharsInLine : 1));
+
+	// Accumulate absolute positions from widths and expand tabs
+	XYPOSITION xPosition = 0.0;
+	for (int i = 0; i < numCharsInLine; i++) {
+		const XWidth widthChar = GetValue(i);
+		SetPosition(i, xPosition);
+		xPosition += widthChar;
+		if (chars[i] == '\t' && vstyle.tabDrawMode != TabDrawMode::ControlChar) {
+			xPosition = tsp.NextTabstopPos(line, xPosition, vstyle.tabWidth);
+		}
+	}
+	SetPosition(numCharsInLine, xPosition);
+
+	const bool lastSegItalics = (chars[numCharsBeforeEOL - 1] != ' ') && vstyle.styles[styles[numCharsBeforeEOL - 1]].italic;
+
+	// Small hack to make lines that end with italics not cut off the edge of the last character
+	if (lastSegItalics) {
+		SetPosition(numCharsInLine, xPosition + vstyle.lastSegItalicsOffset);
+	}
+
 }
 
 ScreenLine::ScreenLine(

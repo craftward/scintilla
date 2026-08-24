@@ -44,15 +44,47 @@ public:
 	void Resize(size_t maxLineLength_);
 };
 
+using XWidth = float;
+
+// A protocol for providing tab stops without exposing all of EditView.
+struct TabStopProvider {
+	[[nodiscard]] virtual XYPOSITION NextTabstopPos(Sci::Line line, XYPOSITION x, XYPOSITION tabWidth) const noexcept = 0;
+};
+
+class XPositions {
+	// This struct has two phases with different meanings for the positions.
+	// During measuring, it holds the width of each byte.
+	// Then each is converted into positions offset from the expected value for its index
+	// assuming consistent character widths.
+	// This allows using 32-bit values over huge lines without overflowing precision.
+	// Expects reasonably consistent text throughout the line - a line with many text
+	// characters at one end and many representations at the other could have inadequate
+	// precision in middle, for example.
+	std::unique_ptr<XWidth[]> positions;
+	XYPOSITION characterWidthMean = 0.0;
+protected:
+	void SetSize(size_t size);
+	void Clear(size_t size);
+	void SetWidthMean(XYPOSITION characterWidthMean_) noexcept;
+	[[nodiscard]] XWidth GetValue(Sci::Position index) const noexcept;
+	void SetPosition(int index, XYPOSITION position) noexcept;
+public:
+	void SetValue(int index, XWidth width) const noexcept;	// Not logically const but required for use by BreakFinder
+	[[nodiscard]] XWidth *PositionsFor(int index) const noexcept;
+	[[nodiscard]] XYPOSITION GetPosition(Sci::Position index) const noexcept;
+	[[nodiscard]] XYPOSITION GetWidth(Sci::Position end, Sci::Position start) const noexcept;
+	[[nodiscard]] Interval Span(int start, int end) const noexcept;
+	[[nodiscard]] Interval SpanByte(int index) const noexcept;
+};
+
 /**
  */
-class LineLayout {
+class LineLayout : public XPositions {
 private:
 	std::unique_ptr<int []>lineStarts;
 	int lenLineStarts = 0;
 	/// Drawing is only performed for @a maxLineLength characters on each line.
 	Sci::Line lineNumber;
-	std::unique_ptr<XYPOSITION[]> positions;
 public:
 	static constexpr int wrapWidthInfinite = 0x7ffffff;
 
@@ -99,15 +131,10 @@ public:
 	int FindPositionFromX(XYPOSITION x, Range range, bool charPosition) const noexcept;
 	Point PointFromPosition(int posInLine, int lineHeight, PointEnd pe) const noexcept;
 	XYPOSITION XInLine(Sci::Position index) const noexcept;
-	Interval Span(int start, int end) const noexcept;
-	Interval SpanByte(int index) const noexcept;
-	void SetPosition(int index, XYPOSITION position) noexcept;
-	[[nodiscard]] XYPOSITION *PositionsFor(int index) const noexcept;
-	[[nodiscard]] XYPOSITION GetPosition(Sci::Position index) const noexcept;
-	[[nodiscard]] XYPOSITION GetWidth(Sci::Position end, Sci::Position start) const noexcept;
 	int EndLineStyle() const noexcept;
 	[[nodiscard]] int LastStyle() const noexcept;
 	void WrapLine(const Document *pdoc, Sci::Position posLineStart, Wrap wrapState, XYPOSITION wrapWidth);
+	void CalculatePositions(Sci::Line line, const TabStopProvider &tsp, const ViewStyle &vstyle) noexcept;
 };
 
 struct ScreenLine : public IScreenLine {

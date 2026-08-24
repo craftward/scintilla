@@ -49,7 +49,7 @@ class LineTabstops;
 /**
 * EditView draws the main text area.
 */
-class EditView {
+class EditView : public TabStopProvider {
 public:
 	PrintParameters printParameters;
 	std::unique_ptr<LineTabstops> ldTabstops;
@@ -108,7 +108,7 @@ public:
 	unsigned int GetLayoutThreads() const noexcept;
 
 	void ClearAllTabstops() noexcept;
-	XYPOSITION NextTabstopPos(Sci::Line line, XYPOSITION x, XYPOSITION tabWidth) const noexcept;
+	[[nodiscard]] XYPOSITION NextTabstopPos(Sci::Line line, XYPOSITION x, XYPOSITION tabWidth) const noexcept override;
 	bool ClearTabstops(Sci::Line line) noexcept;
 	bool AddTabstop(Sci::Line line, int x);
 	int GetNextTabstop(Sci::Line line, int x) const noexcept;
