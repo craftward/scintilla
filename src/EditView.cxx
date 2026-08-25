@@ -325,7 +325,7 @@ void EditView::CalculateSingles(const EditModel &model, Surface *surface, const 
 				repWidth.data(), callerMultiThreaded);
 			XWidth representationWidth = static_cast<XWidth>(repWidth[repr->stringRep.length() - 1]);
 			if (FlagSet(repr->appearance, RepresentationAppearance::Blob)) {
-				representationWidth += static_cast<XWidth>(vstyle.ctrlCharPadding);
+				representationWidth += vstyle.ctrlCharPadding;
 			}
 			const unsigned char uch = ch;
 			singles[uch] = representationWidth;
@@ -605,7 +605,7 @@ void EditView::LayoutLine(const EditModel &model, Surface *surface, const ViewSt
 				}
 			}
 			// Check for text width minimum
-			if (ll->wrapIndent > width - static_cast<int>(vstyle.aveCharWidth) * 15)
+			if (ll->wrapIndent > width - (static_cast<int>(vstyle.aveCharWidth) * 15))
 				ll->wrapIndent = wrapAddIndent;
 			// Check for wrapIndent minimum
 			if ((FlagSet(vstyle.wrap.visualFlags, WrapVisualFlag::Start)) && (ll->wrapIndent < vstyle.aveCharWidth))
@@ -760,7 +760,7 @@ SelectionPosition EditView::SPositionFromLocation(Surface *surface, const EditMo
 			if (virtualSpace) {
 				const XYPOSITION spaceWidth = vs.styles[ll->EndLineStyle()].spaceWidth;
 				const int spaceOffset = static_cast<int>(
-					(pt.x + subLineStart - ll->GetPosition(rangeSubLine.end) + spaceWidth / 2) / spaceWidth);
+					(pt.x + subLineStart - ll->GetPosition(rangeSubLine.end) + (spaceWidth / 2)) / spaceWidth);
 				return SelectionPosition(rangeSubLine.end + posLineStart, spaceOffset);
 			}
 			if (canReturnInvalid) {
@@ -795,7 +795,7 @@ SelectionPosition EditView::SPositionFromLineX(Surface *surface, const EditModel
 		}
 		const XYPOSITION spaceWidth = vs.styles[ll->EndLineStyle()].spaceWidth;
 		const int spaceOffset = static_cast<int>(
-			(x + subLineStart - ll->GetPosition(rangeSubLine.end) + spaceWidth / 2) / spaceWidth);
+			(x + subLineStart - ll->GetPosition(rangeSubLine.end) + (spaceWidth / 2)) / spaceWidth);
 		return SelectionPosition(rangeSubLine.end + posLineStart, spaceOffset);
 	}
 	return SelectionPosition(0);

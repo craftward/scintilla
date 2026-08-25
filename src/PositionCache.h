@@ -213,14 +213,16 @@ public:
 	}
 };
 
-typedef std::map<unsigned int, Representation> MapRepresentation;
+constexpr size_t byteValues = 0x100;
+
+using MapRepresentation = std::map<unsigned int, Representation>;
 
 const char *ControlCharacterString(unsigned char ch) noexcept;
 void Hexits(char *hexits, int ch) noexcept;
 
 class SpecialRepresentations {
 	MapRepresentation mapReprs;
-	unsigned short startByteHasReprs[0x100] {};
+	unsigned short startByteHasReprs[byteValues] {};
 	unsigned int maxKey = 0;
 	bool crlf = false;
 public:
@@ -244,15 +246,14 @@ struct TextSegment {
 	int start;
 	int length;
 	const Representation *representation;
-	TextSegment(int start_=0, int length_=0, const Representation *representation_=nullptr) noexcept :
+	explicit TextSegment(int start_=0, int length_=0, const Representation *representation_=nullptr) noexcept :
 		start(start_), length(length_), representation(representation_) {
 	}
-	int end() const noexcept {
+	[[nodiscard]] int end() const noexcept {
 		return start + length;
 	}
 };
 
-constexpr size_t byteValues = 0x100;
 using SingleByteWidths = XWidth[byteValues];
 
 // If a whole run is longer than lengthStartSubdivision then subdivide

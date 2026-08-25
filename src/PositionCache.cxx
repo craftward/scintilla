@@ -147,8 +147,7 @@ void LineLayout::ClearPositions() {
 }
 
 void LineLayout::Invalidate(ValidLevel validity_) noexcept {
-	if (validity > validity_)
-		validity = validity_;
+	validity = std::min(validity, validity_);
 }
 
 Sci::Line LineLayout::LineNumber() const noexcept {
@@ -218,7 +217,7 @@ int LineLayout::SubLineFromPosition(int posInLine, PointEnd pe) const noexcept {
 void LineLayout::AddLineStart(Sci::Position start) {
 	lines++;
 	if (lines >= lenLineStarts) {
-		const int newMaxLines = lines * 2 + 4;
+		const int newMaxLines = (lines * 2) + 4;
 		std::unique_ptr<int[]> newLineStarts = std::make_unique<int[]>(newMaxLines);
 		if (lenLineStarts) {
 			std::copy(lineStarts.get(), lineStarts.get() + lenLineStarts, newLineStarts.get());
@@ -524,7 +523,7 @@ LineLayoutCache::~LineLayoutCache() = default;
 namespace {
 
 constexpr size_t AlignUp(size_t value, size_t alignment) noexcept {
-	return ((value - 1) / alignment + 1) * alignment;
+	return (((value - 1) / alignment) + 1) * alignment;
 }
 
 constexpr size_t alignmentLLC = 20;
@@ -696,7 +695,7 @@ constexpr unsigned int KeyFromString(std::string_view charBytes) noexcept {
 	constexpr int byteMultiplier = 0x100;
 	unsigned int k=0;
 	for (const unsigned char uc : charBytes) {
-		k = k * byteMultiplier + uc;
+		k = (k * byteMultiplier) + uc;
 	}
 	return k;
 }
@@ -747,9 +746,7 @@ void SpecialRepresentations::SetRepresentation(std::string_view charBytes, std::
 			// New entry so increment for first byte
 			const unsigned char ucStart = charBytes.empty() ? 0 : charBytes[0];
 			startByteHasReprs[ucStart]++;
-			if (key > maxKey) {
-				maxKey = key;
-			}
+			maxKey = std::max(key, maxKey);
 			if (key == representationKeyCrLf) {
 				crlf = true;
 			}
@@ -853,7 +850,9 @@ void SpecialRepresentations::SetDefaultRepresentations(int dbcsCodePage) {
 
 	// Invalid as single bytes in multi-byte encodings
 	if (dbcsCodePage) {
-		for (int k = 0x80; k < 0x100; k++) {
+		constexpr int dbcsMin = 0x80;
+		constexpr int dbcsMax = 0xFF;
+		for (int k = dbcsMin; k <= dbcsMax; k++) {
 			if ((CpUtf8 == dbcsCodePage) || !IsDBCSValidSingleByte(dbcsCodePage, k)) {
 				const char hiByte[2] = { static_cast<char>(k), 0 };
 				char hexits[4];
@@ -1181,8 +1180,9 @@ void PositionCache::MeasureWidths(Surface *surface, const ViewStyle &vstyle, uns
 		}
 	}
 
+	constexpr size_t maxCachedLength = 30;
 	size_t probe = pces.size();	// Out of bounds
-	if ((!pces.empty()) && (sv.length() < 30)) {
+	if ((!pces.empty()) && (sv.length() < maxCachedLength)) {
 		// Only store short strings in the cache so it doesn't churn with
 		// long comments with only a single comment.
 
@@ -1219,7 +1219,8 @@ void PositionCache::MeasureWidths(Surface *surface, const ViewStyle &vstyle, uns
 			guard.lock();
 		}
 		clock++;
-		if (clock > 60000) {
+		constexpr uint16_t clockMax = 60'000;
+		if (clock > clockMax) {
 			// Since there are only 16 bits for the clock, wrap it round and
 			// reset all cache entries so none get stuck with a high clock.
 			for (PositionCacheEntry &pce : pces) {
