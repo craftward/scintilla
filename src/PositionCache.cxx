@@ -1025,6 +1025,18 @@ bool BreakFinder::More() const noexcept {
 	return (subBreak >= 0) || (nextBreak < lineRange.end);
 }
 
+// If next byte is a low-ASCII control character with representation, set its width to the cached
+// value and return true so no segment is added to the vector.
+bool BreakFinder::SetNextSingleByteWidth(const SingleByteWidths &singles) noexcept {
+	const XWidth widthChar = singles[static_cast<unsigned char>(ll->chars[nextBreak])];
+	if ((subBreak < 0) && (widthChar > 0)) {
+		ll->SetValue(nextBreak, widthChar);
+		nextBreak++;
+		return true;
+	}
+	return false;
+}
+
 class PositionCacheEntry {
 	uint16_t styleNumber = 0;
 	uint16_t len = 0;

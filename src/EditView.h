@@ -78,6 +78,9 @@ public:
 	std::unique_ptr<Surface> pixmapIndentGuide;
 	std::unique_ptr<Surface> pixmapIndentGuideHighlight;
 
+	enum class SinglesState { invalid, valid, impossible } singlesState = SinglesState::invalid;
+	SingleByteWidths singles{};
+
 	LineLayoutCache llc;
 	std::unique_ptr<IPositionCache> posCache;
 
@@ -116,6 +119,9 @@ public:
 
 	void DropGraphics() noexcept;
 	void RefreshPixMaps(Surface *surfaceWindow, const ViewStyle &vsDraw);
+
+	void InvalidateSingles() noexcept;
+	void CalculateSingles(const EditModel &model, Surface *surface, const ViewStyle &vstyle, bool callerMultiThreaded);
 
 	std::shared_ptr<LineLayout> RetrieveLineLayout(Sci::Line lineNumber, const EditModel &model);
 	void LayoutLine(const EditModel &model, Surface *surface, const ViewStyle &vstyle,

@@ -252,6 +252,9 @@ struct TextSegment {
 	}
 };
 
+constexpr size_t byteValues = 0x100;
+using SingleByteWidths = XWidth[byteValues];
+
 // If a whole run is longer than lengthStartSubdivision then subdivide
 // into smaller runs at spaces or punctuation.
 constexpr int lengthStartSubdivision = 300;
@@ -288,6 +291,7 @@ public:
 	~BreakFinder() noexcept;
 	TextSegment Next();
 	bool More() const noexcept;
+	bool SetNextSingleByteWidth(const SingleByteWidths &singles) noexcept;
 };
 
 constexpr size_t positionCacheDefaultSize = 0x400;

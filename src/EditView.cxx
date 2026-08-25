@@ -276,6 +276,7 @@ void EditView::DropGraphics() noexcept {
 	pixmapLine.reset();
 	pixmapIndentGuide.reset();
 	pixmapIndentGuideHighlight.reset();
+	InvalidateSingles();
 }
 
 void EditView::RefreshPixMaps(Surface *surfaceWindow, const ViewStyle &vsDraw) {
@@ -294,6 +295,44 @@ void EditView::RefreshPixMaps(Surface *surfaceWindow, const ViewStyle &vsDraw) {
 		pixmapIndentGuide->FlushDrawing();
 		pixmapIndentGuideHighlight->FlushDrawing();
 	}
+}
+
+void EditView::InvalidateSingles() noexcept {
+	singlesState = SinglesState::invalid;
+}
+
+void EditView::CalculateSingles(const EditModel &model, Surface *surface, const ViewStyle &vstyle, bool callerMultiThreaded) {
+	if (singlesState != SinglesState::invalid)
+		return;
+
+	std::fill_n(singles, std::size(singles), 0.0f);
+
+	// Check that there are no problems such as some invisible styles since that would be zero width.
+	// May be more cases that invalidate the use of a simple lookup.
+	for (const Style &style : vstyle.styles) {
+		if (!style.visible) {
+			singlesState = SinglesState::impossible;
+			return;
+		}
+	}
+
+	std::array<XYPOSITION, Representation::maxLength + 1> repWidth{};
+	// Just the low control characters except tab for now but may want to include tab and del
+	for (char ch = 0; ch < ' '; ch++) {
+		if (ch != '\t') {
+			const Representation *repr = model.reprs->GetRepresentation(std::string_view(&ch, 1));
+			posCache->MeasureWidths(surface, vstyle, StyleControlChar, true, repr->stringRep,
+				repWidth.data(), callerMultiThreaded);
+			XWidth representationWidth = static_cast<XWidth>(repWidth[repr->stringRep.length() - 1]);
+			if (FlagSet(repr->appearance, RepresentationAppearance::Blob)) {
+				representationWidth += static_cast<XWidth>(vstyle.ctrlCharPadding);
+			}
+			const unsigned char uch = ch;
+			singles[uch] = representationWidth;
+		}
+	}
+
+	singlesState = SinglesState::valid;
 }
 
 std::shared_ptr<LineLayout> EditView::RetrieveLineLayout(Sci::Line lineNumber, const EditModel &model) {
@@ -484,10 +523,23 @@ void EditView::LayoutLine(const EditModel &model, Surface *surface, const ViewSt
 		// with an extra element at the end for the end of the line.
 		ll->ClearPositions();
 
+		constexpr int minLengthOptimizeSingle = 2000;
+		if (numCharsInLine > minLengthOptimizeSingle) {
+			CalculateSingles(model, surface, vstyle, callerMultiThreaded);
+		}
+
 		std::vector<TextSegment> segments;
 		BreakFinder bfLayout(ll, nullptr, Range(0, numCharsInLine), posLineStart, 0, BreakFinder::BreakFor::Text, model.pdoc, model.reprs.get(), nullptr);
-		while (bfLayout.More()) {
-			segments.push_back(bfLayout.Next());
+		if (singlesState == SinglesState::valid) {
+			while (bfLayout.More()) {
+				if (!bfLayout.SetNextSingleByteWidth(singles)) {
+					segments.push_back(bfLayout.Next());
+				}
+			}
+		} else {
+			while (bfLayout.More()) {
+				segments.push_back(bfLayout.Next());
+			}
 		}
 
 		if (!segments.empty()) {
